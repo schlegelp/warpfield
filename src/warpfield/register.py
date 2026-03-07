@@ -105,7 +105,7 @@ def register_volumes(
         - list: List of outputs from the callback function
     """
     # Select the appropriate registration pyramid class based on the backend
-    pyramid = registry.get_backend(backend).registration_pyramid_cls()
+    pyramid = registry.get_backend(backend).registration_pyramid_cls
 
     recipe.model_validate(recipe.model_dump())
     reg = pyramid(ref, recipe, reg_mask=reg_mask)
