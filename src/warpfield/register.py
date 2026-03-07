@@ -7,13 +7,16 @@ import warnings
 
 import numpy as np
 
-from pydantic import BaseModel
-from typing import List, Union, Callable
+from pydantic import BaseModel, TYPE_CHECKING
+from typing import List, Union, Callable, Any
 
 from .backends import registry
 from .utils import create_rgb_video
 
-_ArrayType = Union[np.ndarray, "cupy.ndarray", "mlx.ndarray"]
+if TYPE_CHECKING:
+    _ArrayType = Union[np.ndarray, "cupy.ndarray", "mlx.ndarray"]
+else:
+    _ArrayType = Any
 
 
 class WarpMap:
