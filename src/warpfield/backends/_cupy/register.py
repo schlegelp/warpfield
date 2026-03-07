@@ -9,7 +9,7 @@ import cupyx.scipy.ndimage
 from pydantic import BaseModel
 from tqdm.auto import tqdm
 
-from .warp import warp_volume
+from .warp import warp_volume_cupy
 from .ndimage import (
     accumarray,
     dogfilter,
@@ -21,7 +21,7 @@ from .ndimage import (
     upsampled_dft_rfftn,
     soften_edges,
 )
-from ..base import WarpMapBase
+from ...base import WarpMapBase
 
 _ArrayType = Union[np.ndarray, cp.ndarray]
 
@@ -74,7 +74,7 @@ class WarpMapCupy(WarpMapBase):
             warnings.warn(f"Volume shape {vol.shape} does not match the expected shape {self.mov_shape}.")
         if out is None:
             out = cp.zeros(self.ref_shape, dtype="float32", order="C")
-        vol_out = warp_volume(
+        vol_out = warp_volume_cupy(
             vol, self.warp_field, self.block_stride, cp.array(-self.block_size / self.block_stride / 2), out=out
         )
         return vol_out

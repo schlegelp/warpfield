@@ -1,6 +1,3 @@
-"""
-CuPy CUDA kernel for 3D volume warping.
-"""
 import numpy as np
 import cupy as cp
 
@@ -100,7 +97,7 @@ extern "C" __global__ void warp_volume_kernel(const float * arr, const int * arr
 )
 
 
-def warp_volume(vol, disp_field, disp_scale, disp_offset, out=None, tpb=[8, 8, 8]):
+def warp_volume_cupy(vol, disp_field, disp_scale, disp_offset, out=None, tpb=[8, 8, 8]):
     """Warp a 3D volume using a displacement field (calling a CUDA kernel).
 
     This function applies a displacement field, typically obtained from a
