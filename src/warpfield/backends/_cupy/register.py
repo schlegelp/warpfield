@@ -79,6 +79,38 @@ class WarpMapCupy(WarpMapBase):
         )
         return vol_out
 
+    def fit_affine(self, target=None):
+        """Fit affine transformation and return new fitted WarpMap
+
+        Args:
+            target (dict): dict with keys "blocks_shape", "block_size", and "block_stride"
+
+        Returns:
+            WarpMap:
+            numpy.array: affine tranformation coefficients
+        """
+        if target is None:
+            warp_field_shape = self.warp_field.shape
+            block_size = self.block_size
+            block_stride = self.block_stride
+        else:
+            warp_field_shape = target["warp_field_shape"]
+            block_size = cp.array(target["block_size"]).astype("float32")
+            block_stride = cp.array(target["block_stride"]).astype("float32")
+
+        ix = cp.indices(self.warp_field.shape[1:]).reshape(3, -1).T
+        ix = ix * self.block_stride + self.block_size / 2
+        M = cp.zeros(self.warp_field.shape[1:])
+        #M[1:-1, 1:-1, 1:-1] = 1
+        M[:,:,:] = 1
+        ixg = cp.where(M.flatten() > 0)[0]
+        a = cp.hstack([ix[ixg], cp.ones((len(ixg), 1))])
+        b = ix[ixg] + self.warp_field.reshape(3, -1).T[ixg]
+        coeff = cp.linalg.lstsq(a, b, rcond=None)[0]
+        ix_out = cp.indices(warp_field_shape[1:]).reshape(3, -1).T * block_stride + block_size / 2
+        linfit = ((ix_out @ (coeff[:3] - cp.eye(3))) + coeff[3]).T.reshape(warp_field_shape)
+        return WarpMapCupy(linfit, block_size, block_stride, self.ref_shape, self.mov_shape), coeff
+
     def median_filter(self):
         """Apply median filter to the displacement field
 
