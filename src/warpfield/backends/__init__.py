@@ -8,8 +8,8 @@ def register_available_backends():
     # Note: the order of checks determines the default priority of backends
     # (e.g., prefer GPU if available)
     if find_spec("cupy") is not None:
-        from .backends.cupy.warp import warp_volume_cupy
-        from .backends.cupy.register import (
+        from .cupy.warp import warp_volume_cupy
+        from .cupy.register import (
             RegistrationPyramidCupy,
             WarpMapCupy,
             SmootherCupy,
