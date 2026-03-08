@@ -149,6 +149,7 @@ def create_rgb_video(fn, reference, moving, fps=10, quality=9):
     """
     try:
         import imageio
+        import imageio_ffmpeg  # Make sure this is also installed
     except ImportError:
         raise ImportError(
             "The 'imageio' and 'imageio-ffmpeg' packages are required to create videos. "
@@ -169,6 +170,7 @@ def create_rgb_video(fn, reference, moving, fps=10, quality=9):
             fn, np.clip(rgb * 255, 0, 255).astype("uint8"), fps=fps, quality=quality, ffmpeg_params=["-vf", vf]
         )
     except Exception:
+        raise
         imageio.mimsave(fn, np.clip(rgb * 255, 0, 255).astype("uint8"), fps=fps, quality=quality)
 
 
@@ -178,7 +180,7 @@ def get_mips(data, units_per_voxel=[1, 1, 1], width=800, axes=[0, 1, 2]):
     rearranged and transposed according to the specified axes.
 
     Args:
-        data (cp.ndarray): A 3D array representing the volume (CuPy array).
+        data (cp.ndarray): A 3D array representing the volume (array-like).
         units_per_voxel (list): The physical size of each voxel in the [z, y, x] directions.
         width (int): The maximum width of the output 2D array.
         axes (list): The desired axis order (e.g., [0, 1, 2] for [z, y, x]).
@@ -190,7 +192,10 @@ def get_mips(data, units_per_voxel=[1, 1, 1], width=800, axes=[0, 1, 2]):
     units_per_voxel = np.array(units_per_voxel)
 
     # Compute the MIPs along the three original axes (z, y, x)
-    mips = [np.max(data, axis=ax) for ax in range(3)]  # [YX, ZX, ZY]
+    # By using the .max() method, we let the data determine whether this is run
+    # on the GPU (Cupy/Mlx) or in the CPU (numpy) but we do work with to numpy
+    # arrays from here on, so we can use the same code for both backends.
+    mips = [np.asarray(data.max(axis=ax)) for ax in range(3)]  # [YX, ZX, ZY]
 
     # Rearrange and transpose the MIPs based on the new axis order
     reordered_mips = []
@@ -220,7 +225,7 @@ def get_mips(data, units_per_voxel=[1, 1, 1], width=800, axes=[0, 1, 2]):
     # Determine the canvas size
     canvas_height = resized_mips[0].shape[0] + resized_mips[1].shape[0]  # y + z
     canvas_width = resized_mips[0].shape[1] + resized_mips[2].shape[0]  # x + z
-    canvas = np.zeros((canvas_height, canvas_width), dtype=data.dtype)
+    canvas = np.zeros((canvas_height, canvas_width), dtype=to_numpy_dtype(data.dtype))
 
     # Place the MIPs on the canvas
     canvas[: resized_mips[0].shape[0], : resized_mips[0].shape[1]] = resized_mips[0]  # YX (top-left)
@@ -247,7 +252,7 @@ def mips_callback(vmax=1, units_per_voxel=[1, 1, 1], width=800, axes=[0, 1, 2]):
     def wrapped(vol):
         mips = get_mips(vol, units_per_voxel=units_per_voxel, width=width, axes=axes)
         mips = mips / vmax
-        return mips.get()
+        return mips
 
     return wrapped
 
@@ -278,13 +283,12 @@ def mosaic_callback(num_slices=9, axis=0, transpose=False, units_per_voxel=[1, 1
             slices.append(np.take(data, slice_indices[i] + np.arange(-thick // 2, thick // 2), axis=axis).max(axis))
         slices = np.array(slices)
         aspect_ratio = np.array([units_per_voxel[i] for i in range(3) if i != axis])
-        slices = slices.get()
         mosaic = montage(slices)
         zoom_factors = min(width / mosaic.shape[1], 1) * aspect_ratio / aspect_ratio[1]
         mosaic = scipy.ndimage.zoom(np.array(mosaic), zoom_factors, order=1) / vmax
         if transpose:
             mosaic = mosaic.T
-        return mosaic.get()
+        return mosaic
 
     return wrapped
 
@@ -338,3 +342,25 @@ def show_gif(im0, im1, filename=None, zoom=[1, 1], fps=5):
         # write to disk
         imageio.mimsave(filename, frames, fps=fps, loop=0)
         display(Image(filename=filename))
+
+
+def to_numpy_dtype(dt):
+    """Convert a CuPy or Mlx dtype to a NumPy dtype.
+
+    Args:
+        dt: Array-like or dtype object, which may be a NumPy dtype, a CuPy dtype, or an Mlx dtype.
+
+    Returns:
+        str: The corresponding NumPy dtype as a string.
+    """
+    if hasattr(dt, "dtype"):
+        dt.dtype
+
+    # For numpy/cupy dtypes, this is now already e.g. "float32"
+    dt = str(dt)
+
+    # For mlx dtypes, this is something like "mlx.core.float32"
+    if 'mlx.core' in str(dt):
+        dt = dt.split(".")[-1]
+
+    return dt

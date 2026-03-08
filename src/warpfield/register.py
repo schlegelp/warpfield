@@ -117,7 +117,7 @@ def register_volumes(
     if video_path is not None:
         try:
             assert cbout[0].ndim == 2, "Callback output must be a 2D array"
-            ref = callback(recipe.pre_filter(ref))
+            ref = callback(recipe.pre_filter(backend=backend, vol=ref))
             vmax = np.percentile(ref, 99.9).item() if vmax is None else vmax
             create_rgb_video(video_path, ref / vmax, np.array(cbout) / vmax, fps=10)
         except (ValueError, AssertionError) as e:
