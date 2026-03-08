@@ -29,4 +29,26 @@ def register_available_backends():
             )
         )
 
+    if find_spec("mlx") is not None:
+        from ._mlx.warp import warp_volume_mlx
+        from ._mlx.register import (
+            RegistrationPyramidMlx,
+            WarpMapMlx,
+            SmootherMlx,
+            ProjectorMlx,
+            RegFilterMlx,
+        )
+
+        registry.register_backend(
+            Backend(
+                name="mlx",
+                warpmap_cls=WarpMapMlx,
+                warp_volume_func=warp_volume_mlx,
+                registration_pyramid_cls=RegistrationPyramidMlx,
+                smoother_cls=SmootherMlx,
+                projector_cls=ProjectorMlx,
+                reg_filter_cls=RegFilterMlx,
+            )
+        )
+
 register_available_backends()
