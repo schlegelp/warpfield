@@ -170,7 +170,6 @@ def create_rgb_video(fn, reference, moving, fps=10, quality=9):
             fn, np.clip(rgb * 255, 0, 255).astype("uint8"), fps=fps, quality=quality, ffmpeg_params=["-vf", vf]
         )
     except Exception:
-        raise
         imageio.mimsave(fn, np.clip(rgb * 255, 0, 255).astype("uint8"), fps=fps, quality=quality)
 
 
