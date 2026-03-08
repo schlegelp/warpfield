@@ -195,7 +195,10 @@ def get_mips(data, units_per_voxel=[1, 1, 1], width=800, axes=[0, 1, 2]):
     # By using the .max() method, we let the data determine whether this is run
     # on the GPU (Cupy/Mlx) or in the CPU (numpy) but we do work with to numpy
     # arrays from here on, so we can use the same code for both backends.
-    mips = [np.asarray(data.max(axis=ax)) for ax in range(3)]  # [YX, ZX, ZY]
+    if "cupy" in str(type(data)).lower():
+        mips = [np.asarray(data.max(axis=ax).get()) for ax in range(3)]  # [YX, ZX, ZY]
+    else:
+        mips = [np.asarray(data.max(axis=ax)) for ax in range(3)]  # [YX, ZX, ZY]
 
     # Rearrange and transpose the MIPs based on the new axis order
     reordered_mips = []
