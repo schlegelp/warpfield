@@ -27,7 +27,9 @@ from .utils import (
     _compute_displacement_for_one_projection,
     _get_compiled_vmapped_displacement_computer,
 )
+from .mem import _mlx_mem_log, _mlx_clear_cache, _mlx_reset_peak_memory, _MLX_MEM_PROFILE
 from ...base import WarpMapBase
+
 
 _ArrayType = Union[np.ndarray, mx.array]
 
@@ -471,6 +473,9 @@ class RegistrationPyramidMlx:
         )
         vol_tmp = mx.zeros(self.ref_shape, dtype=mx.float32)
         vol_tmp = warp_map.warp(vol_tmp0, out=vol_tmp)
+        if _MLX_MEM_PROFILE:
+            mx.eval(vol_tmp)
+            _mlx_mem_log("register_single after initial warp")
         min_block_stride = np.min([mapper.block_stride for mapper in self.mappers], axis=0)
         if callback is not None:
             callback_output.append(callback(vol_tmp))
@@ -480,9 +485,10 @@ class RegistrationPyramidMlx:
                 "The block stride (in voxels) in the last level should not be larger than the block stride in any previous level (along any axis)."
             )
         for k, mapper in enumerate(tqdm(self.mappers, desc="Levels", disable=not verbose)):
-            for _ in tqdm(
+            for rep in tqdm(
                 range(self.recipe.levels[self.mapper_ix[k]].repeats), leave=False, desc="Repeats", disable=not verbose
             ):
+                _mlx_reset_peak_memory()
                 wm = mapper.get_displacement(vol_tmp, smooth_func=self.recipe.levels[self.mapper_ix[k]].smooth)
                 wm.warp_field *= self.recipe.levels[self.mapper_ix[k]].update_rate
                 if self.recipe.levels[self.mapper_ix[k]].median_filter:
@@ -510,7 +516,12 @@ class RegistrationPyramidMlx:
                 # To update the progress bar, we need to evaluate the results
                 if verbose:
                     mx.eval(vol_tmp)
+                if _MLX_MEM_PROFILE:
+                    _mlx_mem_log(f"level={k} repeat={rep} after warp")
         vol_tmp = warp_map.warp(vol, out=vol_tmp)
+        if _MLX_MEM_PROFILE:
+            mx.eval(vol_tmp)
+            _mlx_mem_log("register_single final warp")
         if was_numpy:
             vol_tmp = np.array(vol_tmp)
         return vol_tmp, warp_map, callback_output
