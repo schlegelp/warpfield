@@ -71,10 +71,10 @@ class WarpMapMlx(WarpMapBase):
         """Apply the warp to a volume. Can be thought of as pulling the moving volume to the fixed volume space.
 
         Args:
-            vol (cupy.array): the volume to be warped
+            vol (mx.array): the volume to be warped
 
         Returns:
-            cupy.array: warped volume
+            mx.array: warped volume
         """
         if np.any(vol.shape != np.array(self.mov_shape)):
             warnings.warn(f"Volume shape {vol.shape} does not match the expected shape {self.mov_shape}.")

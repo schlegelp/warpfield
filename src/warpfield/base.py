@@ -90,10 +90,10 @@ class WarpMapBase(ABC):
         """Chain displacement maps
 
         Args:
-            target (WarpMapCupy): WarpMap to be added to existing map
+            target (WarpMap): WarpMap to be added to existing map
 
         Returns:
-            WarpMapCupy: new WarpMap with chained displacement field
+            WarpMap: new WarpMap with chained displacement field
         """
         warp_field = self.warp_field + target.warp_field
         return type(self)(warp_field, target.block_size, target.block_stride, self.ref_shape, self.mov_shape)

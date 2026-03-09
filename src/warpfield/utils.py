@@ -183,19 +183,21 @@ def get_mips(data, units_per_voxel=[1, 1, 1], width=800, axes=[0, 1, 2]):
     rearranged and transposed according to the specified axes.
 
     Args:
-        data (cp.ndarray): A 3D array representing the volume (array-like).
+        data (array-like): A 3D array representing the volume (array-like).
         units_per_voxel (list): The physical size of each voxel in the [z, y, x] directions.
         width (int): The maximum width of the output 2D array.
         axes (list): The desired axis order (e.g., [0, 1, 2] for [z, y, x]).
 
     Returns:
-        cp.ndarray: A 2D array containing the tiled MIPs rearranged and transposed according to the specified axes.
+        np.array: A 2D array containing the tiled MIPs rearranged and transposed according to the specified axes.
     """
     axes = np.array(axes)
     units_per_voxel = np.array(units_per_voxel)
 
     if "cupy" in str(type(data)).lower():
         data = np.asarray(data.get())
+    else:
+        data = np.asarray(data)
 
     # Compute the MIPs along the three original axes (z, y, x)
     # By using the .max() method, we let the data determine whether this is run
@@ -252,7 +254,7 @@ def mips_callback(vmax=1, units_per_voxel=[1, 1, 1], width=800, axes=[0, 1, 2]):
         axes (list): The desired axis order (e.g., [0, 1, 2] for [z, y, x]).
 
     Returns:
-        function: A function that takes a 3D cupy volume and returns the MIPs as 2D numpy array.
+        function: A function that takes a 3D volume and returns the MIPs as 2D numpy array.
     """
 
     def wrapped(vol):
