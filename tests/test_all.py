@@ -17,11 +17,23 @@ from warpfield.utils import load_data
 try:
     import cupy as cp
 
-    _ = cp.cuda.runtime.getDeviceCount()  # Check if any GPU devices are available
-    gpu_available = True
-except (ImportError, cp.cuda.runtime.CUDARuntimeError):
-    gpu_available = False
-    warnings.warn("No GPU detected. Skipping GPU tests.")
+    try:
+        _ = cp.cuda.runtime.getDeviceCount()  # Check if any GPU devices are available
+        cupy_available = True
+    except cp.cuda.runtime.CUDARuntimeError:
+        cupy_available = False
+        warnings.warn("No CUDA devices available. Skipping cupy backend tests.")
+except (ImportError, ModuleNotFoundError):
+    cupy_available = False
+    warnings.warn("Cupy not installed or not importable. Skipping cupy backend tests.")
+
+try:
+    import mlx.core as mx
+
+    mlx_available = True
+except (ImportError, ModuleNotFoundError):
+    mlx_available = False
+    warnings.warn("No MLX detected. Skipping MLX backend tests.")
 
 
 def test_trivial():
@@ -74,8 +86,8 @@ def test_import_tiff(tmp_path):
     assert np.allclose(loaded_data, data), "Loaded .tiff data does not match expected data."
 
 
-@pytest.mark.skipif(not gpu_available, reason="No GPU detected.")
-def test_register_volumes():
+@pytest.mark.skipif(not cupy_available, reason="Cupy not found.")
+def test_register_volumes_cupy():
     """Test the register_volumes function."""
     import cupyx.scipy.ndimage
 
@@ -84,7 +96,7 @@ def test_register_volumes():
     moving = np.roll(fixed, shift=5, axis=0).copy()  # Simulate a simple shift
     recipe = warpfield.Recipe.from_yaml("default.yml")
 
-    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, verbose=False)
+    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="cupy", verbose=False)
 
     assert registered.shape == fixed.shape, "Registered volume shape mismatch."
     assert (
@@ -93,7 +105,46 @@ def test_register_volumes():
     assert warp_map is not None, "WarpMap object was not returned."
 
 
-@pytest.mark.skipif(not gpu_available, reason="No GPU detected.")
+@pytest.mark.skipif(not mlx_available, reason="MLX not found.")
+def test_register_volumes_mlx():
+    """Test the register_volumes function."""
+    import scipy.ndimage
+
+    fixed = np.random.rand(256, 256, 256).astype("float32")
+    fixed = scipy.ndimage.gaussian_filter(fixed, sigma=1)
+    moving = np.roll(fixed, shift=5, axis=0).copy()  # Simulate a simple shift
+    recipe = warpfield.Recipe.from_yaml("default.yml")
+
+    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="mlx", verbose=False)
+
+    assert registered.shape == fixed.shape, "Registered volume shape mismatch."
+    assert (
+        np.abs(registered[10:-10, 10:-10, 10:-10] - fixed[10:-10, 10:-10, 10:-10]) < 0.2
+    ).mean() > 0.9, "Registered volume does not match the fixed volume."
+    assert warp_map is not None, "WarpMap object was not returned."
+
+
+@pytest.mark.skipif(not mlx_available, reason="MLX not found.")
+def test_register_volumes_mlx_noncubic():
+    """Test the register_volumes function with non-cubic volumes (tests shape mismatch bug)."""
+    import scipy.ndimage
+
+    # Non-cubic volume that would expose the stacking bug
+    fixed = np.random.rand(256, 256, 180).astype("float32")
+    fixed = scipy.ndimage.gaussian_filter(fixed, sigma=1)
+    moving = np.roll(fixed, shift=5, axis=0).copy()  # Simulate a simple shift
+    recipe = warpfield.Recipe.from_yaml("default.yml")
+
+    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="mlx", verbose=False)
+
+    assert registered.shape == fixed.shape, "Registered volume shape mismatch."
+    assert (
+        np.abs(registered[10:-10, 10:-10, 10:-10] - fixed[10:-10, 10:-10, 10:-10]) < 0.2
+    ).mean() > 0.9, "Registered volume does not match the fixed volume."
+    assert warp_map is not None, "WarpMap object was not returned."
+
+
+@pytest.mark.skipif(not cupy_available, reason="Cupy not found.")
 def test_cli(tmp_path):
     """Test the CLI for registering volumes."""
     fixed = np.random.rand(256, 256, 256).astype("float32")
