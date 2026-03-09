@@ -41,6 +41,7 @@ jobs:
       #     echo "cache_key=${{ runner.os }}-${{ matrix.python-version }}-$(date +'%Y-%V')" >> $GITHUB_OUTPUT
 
       - uses: mamba-org/setup-micromamba@v2
+        if: runner.os != 'macOS'
         with:
           create-args: >-
             cupy
@@ -59,9 +60,13 @@ jobs:
         run: |
           pip install pytest
 
-      - name: Install package
+      - name: Install CuPy (non-macOS)
+        if: runner.os != 'macOS'
         run: |
           pip install cupy-cuda12x
+
+      - name: Install package
+        run: |
           pip install -e .
 
       # this runs the platform-specific tests declared in tox.ini
