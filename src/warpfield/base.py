@@ -95,8 +95,7 @@ class WarpMapBase(ABC):
         Returns:
             WarpMapCupy: new WarpMap with chained displacement field
         """
-        warp_field = self.warp_field.copy()
-        warp_field += target.warp_field
+        warp_field = self.warp_field + target.warp_field
         return type(self)(warp_field, target.block_size, target.block_stride, self.ref_shape, self.mov_shape)
 
     def invert(self, **kwargs):

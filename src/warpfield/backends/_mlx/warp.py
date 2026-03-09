@@ -1,0 +1,260 @@
+import numpy as np
+import mlx.core as mx
+
+# Metal kernel for GPU-accelerated volume warping
+_warp_volume_metal_header = """
+"""
+
+# Kernel body - MLX auto-generates the function signature
+# Shapes will be passed via template parameters, scale/offset as buffers
+_warp_volume_metal_source = """
+    uint3 gid = thread_position_in_grid;
+    int i = gid.x;
+    int j = gid.y;
+    int k = gid.z;
+
+    if (i >= out_dim0 || j >= out_dim1 || k >= out_dim2) {
+        return;
+    }
+
+    float x = float(i) * disp_inv_scale[0] + disp_offset[0];
+    float y = float(j) * disp_inv_scale[1] + disp_offset[1];
+    float z = float(k) * disp_inv_scale[2] + disp_offset[2];
+
+    // Sample all displacement channels in one interpolation pass.
+    x = metal::clamp(x, -1.0f, float(disp_dim0));
+    y = metal::clamp(y, -1.0f, float(disp_dim1));
+    z = metal::clamp(z, -1.0f, float(disp_dim2));
+
+    int x0 = int(metal::floor(x));
+    int y0 = int(metal::floor(y));
+    int z0 = int(metal::floor(z));
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    int z1 = z0 + 1;
+
+    float xd = x - float(x0);
+    float yd = y - float(y0);
+    float zd = z - float(z0);
+
+    float3 c000, c001, c010, c011, c100, c101, c110, c111;
+    bool disp_interior = (x0 >= 0 && x1 < disp_dim0 && y0 >= 0 && y1 < disp_dim1 && z0 >= 0 && z1 < disp_dim2);
+
+    if (disp_interior) {
+        int sxy = disp_dim1 * disp_dim2;
+        int idx000 = x0 * sxy + y0 * disp_dim2 + z0;
+        int idx001 = x0 * sxy + y0 * disp_dim2 + z1;
+        int idx010 = x0 * sxy + y1 * disp_dim2 + z0;
+        int idx011 = x0 * sxy + y1 * disp_dim2 + z1;
+        int idx100 = x1 * sxy + y0 * disp_dim2 + z0;
+        int idx101 = x1 * sxy + y0 * disp_dim2 + z1;
+        int idx110 = x1 * sxy + y1 * disp_dim2 + z0;
+        int idx111 = x1 * sxy + y1 * disp_dim2 + z1;
+
+        c000 = float3(disp_x[idx000], disp_y[idx000], disp_z[idx000]);
+        c001 = float3(disp_x[idx001], disp_y[idx001], disp_z[idx001]);
+        c010 = float3(disp_x[idx010], disp_y[idx010], disp_z[idx010]);
+        c011 = float3(disp_x[idx011], disp_y[idx011], disp_z[idx011]);
+        c100 = float3(disp_x[idx100], disp_y[idx100], disp_z[idx100]);
+        c101 = float3(disp_x[idx101], disp_y[idx101], disp_z[idx101]);
+        c110 = float3(disp_x[idx110], disp_y[idx110], disp_z[idx110]);
+        c111 = float3(disp_x[idx111], disp_y[idx111], disp_z[idx111]);
+    } else {
+        auto fetch_disp3 = [&](int xi, int yi, int zi) -> float3 {
+            if (xi >= 0 && xi < disp_dim0 && yi >= 0 && yi < disp_dim1 && zi >= 0 && zi < disp_dim2) {
+                int idx = xi * disp_dim1 * disp_dim2 + yi * disp_dim2 + zi;
+                return float3(disp_x[idx], disp_y[idx], disp_z[idx]);
+            }
+
+            // Linear extrapolation (same rule for all 3 channels).
+            int xc = metal::clamp(xi, 0, disp_dim0 - 1);
+            int xn = (xi < 0) ? xc + 1 : (xi >= disp_dim0) ? xc - 1 : xc;
+            int yc = metal::clamp(yi, 0, disp_dim1 - 1);
+            int yn = (yi < 0) ? yc + 1 : (yi >= disp_dim1) ? yc - 1 : yc;
+            int zc = metal::clamp(zi, 0, disp_dim2 - 1);
+            int zn = (zi < 0) ? zc + 1 : (zi >= disp_dim2) ? zc - 1 : zc;
+
+            int idx0 = xc * disp_dim1 * disp_dim2 + yc * disp_dim2 + zc;
+            int idx1 = xn * disp_dim1 * disp_dim2 + yn * disp_dim2 + zn;
+
+            float3 v0 = float3(disp_x[idx0], disp_y[idx0], disp_z[idx0]);
+            float3 v1 = float3(disp_x[idx1], disp_y[idx1], disp_z[idx1]);
+            return v0 + (v0 - v1);
+        };
+
+        c000 = fetch_disp3(x0, y0, z0);
+        c001 = fetch_disp3(x0, y0, z1);
+        c010 = fetch_disp3(x0, y1, z0);
+        c011 = fetch_disp3(x0, y1, z1);
+        c100 = fetch_disp3(x1, y0, z0);
+        c101 = fetch_disp3(x1, y0, z1);
+        c110 = fetch_disp3(x1, y1, z0);
+        c111 = fetch_disp3(x1, y1, z1);
+    }
+
+    float3 c00 = c000 * (1 - xd) + c100 * xd;
+    float3 c01 = c001 * (1 - xd) + c101 * xd;
+    float3 c10 = c010 * (1 - xd) + c110 * xd;
+    float3 c11 = c011 * (1 - xd) + c111 * xd;
+
+    float3 c0 = c00 * (1 - yd) + c10 * yd;
+    float3 c1 = c01 * (1 - yd) + c11 * yd;
+    float3 disp = c0 * (1 - zd) + c1 * zd;
+
+    float d0 = disp.x;
+    float d1 = disp.y;
+    float d2 = disp.z;
+
+    // Inline volume sampling with zero padding
+    float src_x = float(i) + d0;
+    float src_y = float(j) + d1;
+    float src_z = float(k) + d2;
+
+    src_x = metal::clamp(src_x, -1.0f, float(vol_dim0));
+    src_y = metal::clamp(src_y, -1.0f, float(vol_dim1));
+    src_z = metal::clamp(src_z, -1.0f, float(vol_dim2));
+
+    int vx0 = int(metal::floor(src_x));
+    int vy0 = int(metal::floor(src_y));
+    int vz0 = int(metal::floor(src_z));
+    int vx1 = vx0 + 1;
+    int vy1 = vy0 + 1;
+    int vz1 = vz0 + 1;
+
+    float vxd = src_x - float(vx0);
+    float vyd = src_y - float(vy0);
+    float vzd = src_z - float(vz0);
+
+    float vc00, vc01, vc10, vc11;
+    bool vol_interior = (vx0 >= 0 && vx1 < vol_dim0 && vy0 >= 0 && vy1 < vol_dim1 && vz0 >= 0 && vz1 < vol_dim2);
+
+    if (vol_interior) {
+        int sxy = vol_dim1 * vol_dim2;
+        int vidx000 = vx0 * sxy + vy0 * vol_dim2 + vz0;
+        int vidx001 = vx0 * sxy + vy0 * vol_dim2 + vz1;
+        int vidx010 = vx0 * sxy + vy1 * vol_dim2 + vz0;
+        int vidx011 = vx0 * sxy + vy1 * vol_dim2 + vz1;
+        int vidx100 = vx1 * sxy + vy0 * vol_dim2 + vz0;
+        int vidx101 = vx1 * sxy + vy0 * vol_dim2 + vz1;
+        int vidx110 = vx1 * sxy + vy1 * vol_dim2 + vz0;
+        int vidx111 = vx1 * sxy + vy1 * vol_dim2 + vz1;
+
+        vc00 = vol[vidx000] * (1 - vxd) + vol[vidx100] * vxd;
+        vc01 = vol[vidx001] * (1 - vxd) + vol[vidx101] * vxd;
+        vc10 = vol[vidx010] * (1 - vxd) + vol[vidx110] * vxd;
+        vc11 = vol[vidx011] * (1 - vxd) + vol[vidx111] * vxd;
+    } else {
+        auto fetch_vol = [&](int xi, int yi, int zi) -> float {
+            if (xi >= 0 && xi < vol_dim0 && yi >= 0 && yi < vol_dim1 && zi >= 0 && zi < vol_dim2) {
+                return vol[xi * vol_dim1 * vol_dim2 + yi * vol_dim2 + zi];
+            }
+            return 0.0f;  // Zero padding
+        };
+
+        vc00 = fetch_vol(vx0, vy0, vz0) * (1 - vxd) + fetch_vol(vx1, vy0, vz0) * vxd;
+        vc01 = fetch_vol(vx0, vy0, vz1) * (1 - vxd) + fetch_vol(vx1, vy0, vz1) * vxd;
+        vc10 = fetch_vol(vx0, vy1, vz0) * (1 - vxd) + fetch_vol(vx1, vy1, vz0) * vxd;
+        vc11 = fetch_vol(vx0, vy1, vz1) * (1 - vxd) + fetch_vol(vx1, vy1, vz1) * vxd;
+    }
+
+    float vc0 = vc00 * (1 - vyd) + vc10 * vyd;
+    float vc1 = vc01 * (1 - vyd) + vc11 * vyd;
+
+    uint output_idx = i * out_dim1 * out_dim2 + j * out_dim2 + k;
+    output[output_idx] = vc0 * (1 - vzd) + vc1 * vzd;
+"""
+
+# Compile the Metal kernel
+_warp_volume_metal_kernel = mx.fast.metal_kernel(
+    name="warp_volume_kernel",
+    input_names=["vol", "disp_x", "disp_y", "disp_z", "disp_inv_scale", "disp_offset"],
+    output_names=["output"],
+    source=_warp_volume_metal_source,
+    header=_warp_volume_metal_header,
+)
+
+
+def warp_volume_mlx(vol, disp_field, disp_scale, disp_offset, out=None, tpb=[8, 4, 8]):
+    """Warp a 3D volume using a displacement field.
+
+    This function applies a displacement field, typically obtained from a
+    registration algorithm, to warp a 3D volume. The displacement field
+    is a 4D array of shape (3, x, y, z), where the first dimension corresponds
+    to the x, y, and z displacements. It defines, for each voxel in the target
+    volume, the source location in the warped volume.
+
+    Args:
+        vol (array_like): 3D input array (x-y-z) to be warped.
+        disp_field (array_like): 4D array (3-x-y-z) of displacements along x, y, z.
+        disp_scale (array_like): Scaling factors for the displacement field.
+        disp_offset (array_like): Offset values for the displacement field.
+        out (array_like, optional): Output array to store the warped volume.
+            If None, a new array is created with shape matching vol.
+        tpb (list, optional): Threads per block for kernel execution.
+            Defaults to [8, 4, 8].
+
+    Returns:
+        array_like: Warped 3D volume.
+    """
+    was_numpy = isinstance(vol, np.ndarray)
+
+    # Convert inputs to MLX arrays
+    vol_mx = mx.array(vol, dtype=mx.float32) if not isinstance(vol, mx.array) else vol
+    disp_field_mx = mx.array(disp_field, dtype=mx.float32) if not isinstance(disp_field, mx.array) else disp_field
+    disp_scale_mx = mx.array(disp_scale, dtype=mx.float32)
+    disp_inv_scale_mx = 1.0 / disp_scale_mx
+    disp_offset_mx = (
+        mx.array(disp_offset, dtype=mx.float32)
+        if not isinstance(disp_offset, mx.array)
+        else mx.array(disp_offset, dtype=mx.float32)
+    )
+
+    # Determine output shape
+    if out is None:
+        out_shape = vol_mx.shape
+    else:
+        assert out.dtype == mx.float32, f"Output array must have dtype float32, got {out.dtype}"
+        out_shape = out.shape
+
+    disp_shape = disp_field_mx.shape[1:]
+
+    # Launch Metal kernel with template parameters for integer dimensions only
+    grid_dims = out_shape
+    threadgroup = tuple(tpb)
+
+    result = _warp_volume_metal_kernel(
+        inputs=[vol_mx, disp_field_mx[0], disp_field_mx[1], disp_field_mx[2], disp_inv_scale_mx, disp_offset_mx],
+        output_shapes=[list(out_shape)],
+        output_dtypes=[mx.float32],
+        grid=grid_dims,
+        threadgroup=threadgroup,
+        template=[
+            ("vol_dim0", int(vol_mx.shape[0])),
+            ("vol_dim1", int(vol_mx.shape[1])),
+            ("vol_dim2", int(vol_mx.shape[2])),
+            ("disp_dim0", int(disp_shape[0])),
+            ("disp_dim1", int(disp_shape[1])),
+            ("disp_dim2", int(disp_shape[2])),
+            ("out_dim0", int(out_shape[0])),
+            ("out_dim1", int(out_shape[1])),
+            ("out_dim2", int(out_shape[2])),
+        ],
+        stream=mx.default_stream(mx.default_device()),
+    )
+
+    if isinstance(result, list):
+        result = result[0]
+
+    # If out buffer was provided, copy result into it and return it
+    # This is necessary because MLX kernels can't modify inputs in place.
+    # So if we want to support a common out= pattern, we have to copy the
+    # kernel's output back into it.
+    if out is not None:
+        out[:] = result
+    else:
+        out = result
+
+    # Otherwise return the new result
+    if was_numpy:
+        return np.array(out, dtype=np.float32)
+    return out
