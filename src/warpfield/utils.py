@@ -6,6 +6,8 @@ import scipy.ndimage
 
 import numpy as np
 
+from pathlib import Path
+
 from .backends import registry
 
 
@@ -36,6 +38,8 @@ def load_data(file_path: str):
         - data (np.ndarray): Loaded data as a NumPy array.
         - metadata (dict): Dictionary containing metadata (e.g., scale, orientation, origin).
     """
+    if isinstance(file_path, Path):
+        file_path = str(file_path)
 
     if file_path.endswith(".npy"):
         data = np.load(file_path).copy()
