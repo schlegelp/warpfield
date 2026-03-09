@@ -14,7 +14,7 @@ from .backends import registry
 from .utils import create_rgb_video
 
 if TYPE_CHECKING:
-    _ArrayType = Union[np.ndarray, "cupy.ndarray", "mlx.ndarray"]
+    _ArrayType = Union[np.ndarray, "cupy.ndarray", "mlx.ndarray"]  # faq:
 else:
     _ArrayType = Any
 
@@ -23,7 +23,7 @@ class WarpMap:
     """Factory class for creating WarpMap instances with automatic backend selection.
 
     This class uses the __new__ method to instantiate the appropriate backend
-    implementation (e.g., WarpMapCupy for GPU acceleration).
+    implementation (e.g., WarpMapCupy for CUDA GPU acceleration or WarpMapMlx for Apple Silicon GPU).
 
     Args:
         warp_field: the displacement field data (3-x-y-z)
@@ -34,14 +34,15 @@ class WarpMap:
         backend (str): which backend to use. Options are:
             - "auto" (default): automatically selects the best available backend
             - "cupy": forces use of CuPy backend (requires GPU)
-            - "numpy": forces use of NumPy backend (CPU only, not yet implemented)
+            - "mlx": forces use of MLX backend (requires Apple Silicon GPU)
+            - "cpu": forces use of CPU backend (not yet implemented)
 
     Returns:
         An instance of the appropriate WarpMap backend implementation.
 
     Example:
         >>> wm = WarpMap(warp_field, block_size, block_stride, ref_shape, mov_shape)
-        >>> # Automatically uses CuPy if available, otherwise falls back to NumPy
+        >>> # Automatically uses the best available backend
     """
 
     def __new__(cls, warp_field, block_size, block_stride, ref_shape, mov_shape, backend="auto"):
@@ -53,7 +54,7 @@ class WarpMap:
             block_stride: block stride
             ref_shape: reference shape
             mov_shape: moving shape
-            backend (str): backend to use ("auto", "cupy", "numpy", etc.)
+            backend (str): backend to use ("auto", "cupy", "mlx", "cpu", etc.)
 
         Returns:
             Instance of a WarpMap backend implementation
@@ -87,8 +88,8 @@ def register_volumes(
     """Register a volume to a reference volume using a registration pyramid.
 
     Args:
-        ref (numpy.array or cupy.array): Reference volume
-        vol (numpy.array or cupy.array): Volume to be registered
+        ref (numpy, cupy or mlx array): Reference volume
+        vol (numpy, cupy or mlx array): Volume to be registered
         recipe (Recipe): Registration recipe
         reg_mask (numpy.array): Mask to be multiplied with the reference volume. Default is 1 (no mask)
         callback (function): Callback function to be called on the volume after each iteration. Default is None.
@@ -100,7 +101,7 @@ def register_volumes(
         vmax (float): Maximum pixel value (to scale video brightness). If none, set to 99.9 percentile of pixel values.
 
     Returns:
-        - numpy.array or cupy.array (depending on vol input): Registered volume
+        - numpy, cupy or mlx array (depending on vol input): Registered volume
         - WarpMap: Displacement field
         - list: List of outputs from the callback function
     """
@@ -148,11 +149,11 @@ class Projector(BaseModel):
     def __call__(self, backend, vol_blocks, axis):
         """Apply a 2D projection and filters to a volume block
         Args:
-            backend (str): Name of the backend to use (e.g., "cupy", "numpy")
-            vol_blocks (cupy.array): Blocked volume to be projected (6D dataset, with the first 3 dimensions being blocks and the last 3 dimensions being voxels)
+            backend (str): Name of the backend to use (e.g., "cupy", "mlx", "cpu").
+            vol_blocks (array-like): Blocked volume to be projected (6D dataset, with the first 3 dimensions being blocks and the last 3 dimensions being voxels)
             axis (int): Axis along which to project
         Returns:
-            cupy.array: Projected volume block (5D dataset, with the first 3 dimensions being blocks and the last 2 dimensions being 2D projections)
+            array: Projected volume block (5D dataset, with the first 3 dimensions being blocks and the last 2 dimensions being 2D projections)
         """
         projector = registry.get_backend(backend).projector_cls()
         projector.max = self.max
@@ -204,10 +205,10 @@ class RegFilter(BaseModel):
     def __call__(self, backend, vol, reg_mask=None):
         """Apply the filter to the volume
         Args:
-            vol (cupy or numpy array): 3D volume to be filtered
+            vol (cupy, numpy or mlx array): 3D volume to be filtered
             reg_mask (array): Mask for registration
         Returns:
-            cupy.ndarray: Filtered volume
+            array: Filtered volume
         """
         filter = registry.get_backend(backend).reg_filter_cls()
         filter.clip_thresh = self.clip_thresh
