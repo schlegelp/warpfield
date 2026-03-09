@@ -44,6 +44,80 @@ def test_trivial2():
     assert False == False
 
 
+def test_warpmap_invert_fast_zero_field():
+    """invert_fast should return (near-)zero inverse for a zero displacement field."""
+    ref_shape = (5, 6, 7)
+    mov_shape = (5, 6, 7)
+    block_size = np.array([1, 1, 1], dtype=np.float32)
+    block_stride = np.array([1, 1, 1], dtype=np.float32)
+    warp_field = np.zeros((3, *ref_shape), dtype=np.float32)
+
+    wm = warpfield.register.WarpMap(
+        warp_field=warp_field,
+        block_size=block_size,
+        block_stride=block_stride,
+        ref_shape=ref_shape,
+        mov_shape=mov_shape,
+        backend="auto",
+    )
+
+    inv = wm.invert_fast(sigma=0.5, truncate=4)
+    inv_np = np.array(inv.warp_field)
+
+    expected_shape = tuple(np.ceil(np.array(mov_shape) / block_stride + 1).astype(int))
+    assert inv_np.shape == (3, *expected_shape)
+    np.testing.assert_allclose(inv_np, 0.0, atol=1e-6)
+
+
+def test_warpmap_push_coordinates_constant_shift():
+    """push_coordinates should add sampled displacement vectors to input voxel coordinates."""
+    shape = (6, 6, 6)
+    shift = np.array([1.5, -2.0, 0.25], dtype=np.float32)
+    warp_field = np.zeros((3, *shape), dtype=np.float32)
+    warp_field[0] = shift[0]
+    warp_field[1] = shift[1]
+    warp_field[2] = shift[2]
+
+    wm = warpfield.register.WarpMap(
+        warp_field=warp_field,
+        block_size=np.array([1, 1, 1], dtype=np.float32),
+        block_stride=np.array([1, 1, 1], dtype=np.float32),
+        ref_shape=shape,
+        mov_shape=shape,
+        backend="auto",
+    )
+
+    coords = np.array([[1.0, 2.0, 3.5], [1.0, 4.0, 2.0], [2.0, 1.5, 4.0]], dtype=np.float32)
+
+    pushed = wm.push_coordinates(coords)
+    pushed_negative = wm.push_coordinates(coords, negative_shifts=True)
+
+    np.testing.assert_allclose(pushed, coords + shift[:, None], atol=1e-5)
+    np.testing.assert_allclose(pushed_negative, coords - shift[:, None], atol=1e-5)
+
+
+def test_warpmap_jacobian_det_linear_field():
+    """jacobian_det should match the analytic determinant for a linear displacement field."""
+    shape = (7, 7, 7)
+    z, y, x = np.indices(shape, dtype=np.float32)
+    alpha, beta, gamma = 0.2, -0.1, 0.05
+    warp_field = np.stack([alpha * z, beta * y, gamma * x]).astype(np.float32)
+
+    wm = warpfield.register.WarpMap(
+        warp_field=warp_field,
+        block_size=np.array([1, 1, 1], dtype=np.float32),
+        block_stride=np.array([1, 1, 1], dtype=np.float32),
+        ref_shape=shape,
+        mov_shape=shape,
+        backend="auto",
+    )
+
+    det_j = np.array(wm.jacobian_det(units_per_voxel=[1, 1, 1], edge_order=1))
+    expected = (1.0 + alpha) * (1.0 + beta) * (1.0 + gamma)
+
+    np.testing.assert_allclose(det_j[1:-1, 1:-1, 1:-1], expected, atol=2e-3, rtol=2e-3)
+
+
 def test_import_npy(tmp_path):
     """Test importing a 3D .npy file."""
     file_path = tmp_path / "test.npy"
@@ -86,27 +160,7 @@ def test_import_tiff(tmp_path):
     assert np.allclose(loaded_data, data), "Loaded .tiff data does not match expected data."
 
 
-@pytest.mark.skipif(not cupy_available, reason="Cupy not found.")
-def test_register_volumes_cupy():
-    """Test the register_volumes function."""
-    import cupyx.scipy.ndimage
-
-    fixed = np.random.rand(256, 256, 256).astype("float32")
-    fixed = cupyx.scipy.ndimage.gaussian_filter(cp.array(fixed), sigma=1).get()
-    moving = np.roll(fixed, shift=5, axis=0).copy()  # Simulate a simple shift
-    recipe = warpfield.Recipe.from_yaml("default.yml")
-
-    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="cupy", verbose=False)
-
-    assert registered.shape == fixed.shape, "Registered volume shape mismatch."
-    assert (
-        np.abs(registered[10:-10, 10:-10, 10:-10] - fixed[10:-10, 10:-10, 10:-10]) < 0.2
-    ).mean() > 0.9, "Registered volume does not match the fixed volume."
-    assert warp_map is not None, "WarpMap object was not returned."
-
-
-@pytest.mark.skipif(not mlx_available, reason="MLX not found.")
-def test_register_volumes_mlx():
+def test_register_volumes():
     """Test the register_volumes function."""
     import scipy.ndimage
 
@@ -115,7 +169,7 @@ def test_register_volumes_mlx():
     moving = np.roll(fixed, shift=5, axis=0).copy()  # Simulate a simple shift
     recipe = warpfield.Recipe.from_yaml("default.yml")
 
-    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="mlx", verbose=False)
+    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="auto", verbose=False)
 
     assert registered.shape == fixed.shape, "Registered volume shape mismatch."
     assert (
@@ -124,8 +178,7 @@ def test_register_volumes_mlx():
     assert warp_map is not None, "WarpMap object was not returned."
 
 
-@pytest.mark.skipif(not mlx_available, reason="MLX not found.")
-def test_register_volumes_mlx_noncubic():
+def test_register_volumes_noncubic():
     """Test the register_volumes function with non-cubic volumes (tests shape mismatch bug)."""
     import scipy.ndimage
 
@@ -135,7 +188,7 @@ def test_register_volumes_mlx_noncubic():
     moving = np.roll(fixed, shift=5, axis=0).copy()  # Simulate a simple shift
     recipe = warpfield.Recipe.from_yaml("default.yml")
 
-    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="mlx", verbose=False)
+    registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="auto", verbose=False)
 
     assert registered.shape == fixed.shape, "Registered volume shape mismatch."
     assert (
@@ -144,7 +197,6 @@ def test_register_volumes_mlx_noncubic():
     assert warp_map is not None, "WarpMap object was not returned."
 
 
-@pytest.mark.skipif(not cupy_available, reason="Cupy not found.")
 def test_cli(tmp_path):
     """Test the CLI for registering volumes."""
     fixed = np.random.rand(256, 256, 256).astype("float32")
