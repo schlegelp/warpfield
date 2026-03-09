@@ -17,7 +17,7 @@ from .ndimage import (
     periodic_smooth_decomposition_nd_rfft,
     sliding_block,
     soften_edges,
-    gaussian_filter_mlx_reflect
+    gaussian_filter_mlx_reflect,
 )
 from .utils import (
     map_coordinates,
@@ -25,7 +25,6 @@ from .utils import (
     smooth_func,
     _get_sample_displacement_channels_vmapped,
     _compute_displacement_for_one_projection,
-    _get_compiled_vmapped_displacement_computer,
 )
 from .mem import _mlx_mem_log, _mlx_clear_cache, _mlx_reset_peak_memory, _MLX_MEM_PROFILE
 from ...base import WarpMapBase
@@ -106,13 +105,15 @@ class WarpMapMlx(WarpMapBase):
             block_size_mx = mx.array(target["block_size"], dtype=mx.float32)
             block_stride_mx = mx.array(target["block_stride"], dtype=mx.float32)
 
-        # Create coordinate grid on GPU using MLX
+        # Create coordinate indices efficiently without full meshgrids
         shape = self.warp_field.shape[1:]
-        z = mx.arange(shape[0], dtype=mx.float32)
-        y = mx.arange(shape[1], dtype=mx.float32)
-        x = mx.arange(shape[2], dtype=mx.float32)
-        zz, yy, xx = mx.meshgrid(z, y, x, indexing="ij")
-        ix = mx.stack([zz.reshape(-1), yy.reshape(-1), xx.reshape(-1)], axis=1)  # (N, 3)
+        # Generate flat indices and convert to coordinates
+        n_total = shape[0] * shape[1] * shape[2]
+        flat_idx = mx.arange(n_total, dtype=mx.int32)
+        z_idx = flat_idx // (shape[1] * shape[2])
+        y_idx = (flat_idx % (shape[1] * shape[2])) // shape[2]
+        x_idx = flat_idx % shape[2]
+        ix = mx.stack([z_idx.astype(mx.float32), y_idx.astype(mx.float32), x_idx.astype(mx.float32)], axis=1)
         ix = ix * self.block_stride[None, :] + self.block_size[None, :] / 2
 
         # Build linear system: A @ coeff = b (on GPU)
@@ -129,12 +130,14 @@ class WarpMapMlx(WarpMapBase):
         atb = a_mx.T @ b_mx  # (4, 3) - on GPU
         coeff_mx = mx.linalg.solve(ata, atb, stream=mx.cpu)  # (4, 3) - on CPU
 
-        # Create output coordinate grid on GPU
-        z_out = mx.arange(warp_field_shape[1], dtype=mx.float32)
-        y_out = mx.arange(warp_field_shape[2], dtype=mx.float32)
-        x_out = mx.arange(warp_field_shape[3], dtype=mx.float32)
-        zz_out, yy_out, xx_out = mx.meshgrid(z_out, y_out, x_out, indexing="ij")
-        ix_out = mx.stack([zz_out.reshape(-1), yy_out.reshape(-1), xx_out.reshape(-1)], axis=1)
+        # Create output coordinate indices efficiently without full meshgrids
+        out_shape = warp_field_shape[1:]
+        n_total_out = out_shape[0] * out_shape[1] * out_shape[2]
+        flat_idx_out = mx.arange(n_total_out, dtype=mx.int32)
+        z_out = flat_idx_out // (out_shape[1] * out_shape[2])
+        y_out = (flat_idx_out % (out_shape[1] * out_shape[2])) // out_shape[2]
+        x_out = flat_idx_out % out_shape[2]
+        ix_out = mx.stack([z_out.astype(mx.float32), y_out.astype(mx.float32), x_out.astype(mx.float32)], axis=1)
         ix_out = ix_out * block_stride_mx[None, :] + block_size_mx[None, :] / 2
 
         # Apply affine transformation: displacement = (coords @ (coeff[:3] - I)) + coeff[3]
@@ -177,12 +180,13 @@ class WarpMapMlx(WarpMapBase):
         else:
             raise ValueError("target must be a WarpMap, WarpMapper, or dict")
 
-        # Create coordinate grids directly on GPU using MLX (avoid CPU roundtrip via np.indices)
-        z_idx = mx.arange(t_sh[0], dtype=mx.float32)
-        y_idx = mx.arange(t_sh[1], dtype=mx.float32)
-        x_idx = mx.arange(t_sh[2], dtype=mx.float32)
-        zz, yy, xx = mx.meshgrid(z_idx, y_idx, x_idx, indexing="ij")
-        ix = mx.stack([zz.reshape(-1), yy.reshape(-1), xx.reshape(-1)], axis=0)  # (3, N)
+        # Create coordinate indices efficiently without full meshgrids
+        n_total = t_sh[0] * t_sh[1] * t_sh[2]
+        flat_idx = mx.arange(n_total, dtype=mx.int32)
+        z_idx = flat_idx // (t_sh[1] * t_sh[2])
+        y_idx = (flat_idx % (t_sh[1] * t_sh[2])) // t_sh[2]
+        x_idx = flat_idx % t_sh[2]
+        ix = mx.stack([z_idx.astype(mx.float32), y_idx.astype(mx.float32), x_idx.astype(mx.float32)], axis=0)  # (3, N)
         ix = (ix * t_bst[:, None] + (t_bsz - self.block_size)[:, None] / 2) / self.block_stride[:, None]
 
         # Fast path: sample all displacement channels at once via vmap/compile.
@@ -253,7 +257,7 @@ class WarpMapMlx(WarpMapBase):
         scaling = mx.array(units_per_voxel, dtype=mx.float32) * self.block_stride
         coords = mx.array(np.indices(self.warp_field.shape[1:]), dtype=mx.float32) * scaling[:, None, None, None]
         phi = coords + self.warp_field
-        J = mx.empty(self.warp_field.shape[1:] + (3, 3), dtype=mx.float32)
+        J = mx.zeros(self.warp_field.shape[1:] + (3, 3), dtype=mx.float32)
 
         phi_np = np.array(phi)
         scaling_np = np.array(scaling)
@@ -263,7 +267,12 @@ class WarpMapMlx(WarpMapBase):
             for j in range(3):
                 J[..., i, j] = mx.array(grads[j], dtype=mx.float32)
 
-        return mx.linalg.det(J)
+        # Compute 3x3 determinant explicitly because mlx.linalg.det is unavailable.
+        return (
+            J[..., 0, 0] * (J[..., 1, 1] * J[..., 2, 2] - J[..., 1, 2] * J[..., 2, 1])
+            - J[..., 0, 1] * (J[..., 1, 0] * J[..., 2, 2] - J[..., 1, 2] * J[..., 2, 0])
+            + J[..., 0, 2] * (J[..., 1, 0] * J[..., 2, 1] - J[..., 1, 1] * J[..., 2, 0])
+        )
 
 
 class WarpMapperMlx:
@@ -335,66 +344,41 @@ class WarpMapperMlx:
         del vol_blocks
 
         epsilon_mx = mx.array(self.epsilon, dtype=mx.float32)
-        compiled_vmapped_computer = _get_compiled_vmapped_displacement_computer(self.subpixel)
 
-        # Pre-compute FFT cross-correlations and xcorr projections for all 3 axes
-        xcorr_proj_list = []
-        R_list = []
+        # Process FFT cross-correlations one axis at a time to minimize GPU memory peaks
+        # This avoids stacking all 3 axes simultaneously, which can cause 30+ GB spikes
+        disp_field_list = []
         for i in range(3):
+            _mlx_reset_peak_memory()
+            # Compute FFT and cross-correlation for this axis
             R = mx.fft.rfft2(vol_blocks_proj[i], axes=(-2, -1)) * self.ref_blocks_proj_ft_conj[i]
             xcorr = mx.fft.fftshift(mx.fft.irfft2(R, axes=(-2, -1)), axes=(-2, -1))
             if smooth_func is not None:
                 # smooth_func is a Smoother instance that routes to backend-specific smoother
                 xcorr = smooth_func(backend="mlx", xcorr_proj=xcorr, block_size=self.block_size)
-            xcorr_proj_list.append(xcorr)
-            R_list.append(R)
 
-        # Check if all xcorr projections have the same shape (cubic blocks)
-        # If not, process each axis separately
-        shapes_match = all(xcorr_proj_list[0].shape == xcorr_proj_list[i].shape for i in range(1, 3))
+            # Refine displacement for this axis
+            disp_single = _compute_displacement_for_one_projection(xcorr, R, epsilon_mx, self.subpixel)
+            if _MLX_MEM_PROFILE:
+                mx.eval(disp_single)
+                _mlx_mem_log(f"get_displacement axis={i}")
+            disp_field_list.append(disp_single)
 
-        if shapes_match:
-            # Fast path: refine displacements via vmap+compile (cubic blocks)
-            xcorr_proj_stacked = mx.stack(xcorr_proj_list, axis=0)
-            R_stacked = mx.stack(R_list, axis=0)
-            disp_field_stacked = compiled_vmapped_computer(xcorr_proj_stacked, R_stacked, epsilon_mx)
+            # Free intermediate arrays to reduce memory usage
+            del R, xcorr
 
-            # Combine displacement fields from the 3 projections
-            disp_field = (
-                mx.stack(
-                    [
-                        disp_field_stacked[1, 0] + disp_field_stacked[2, 0],
-                        disp_field_stacked[0, 0] + disp_field_stacked[2, 1],
-                        disp_field_stacked[0, 1] + disp_field_stacked[1, 1],
-                    ],
-                    axis=0,
-                )
-                / 2.0
+        # Combine displacement fields from the 3 projections
+        disp_field = (
+            mx.stack(
+                [
+                    disp_field_list[1][0] + disp_field_list[2][0],
+                    disp_field_list[0][0] + disp_field_list[2][1],
+                    disp_field_list[0][1] + disp_field_list[1][1],
+                ],
+                axis=0,
             )
-        else:
-            # Slow path: process each axis separately (non-cubic blocks)
-            disp_field_list = []
-            for i in range(3):
-                # Refine each projection independently.
-                # Using the 3-projection vmapped helper here is incorrect for non-cubic
-                # blocks because each projection has a different 2D shape.
-                disp_single = _compute_displacement_for_one_projection(
-                    xcorr_proj_list[i], R_list[i], epsilon_mx, self.subpixel
-                )
-                disp_field_list.append(disp_single)
-
-            # Combine displacement fields from the 3 projections
-            disp_field = (
-                mx.stack(
-                    [
-                        disp_field_list[1][0] + disp_field_list[2][0],
-                        disp_field_list[0][0] + disp_field_list[2][1],
-                        disp_field_list[0][1] + disp_field_list[1][1],
-                    ],
-                    axis=0,
-                )
-                / 2.0
-            )
+            / 2.0
+        )
 
         return WarpMapMlx(disp_field, self.block_size, self.block_stride, self.ref_shape, vol.shape)
 
@@ -513,9 +497,10 @@ class RegistrationPyramidMlx:
                 if callback is not None:
                     callback_output.append(callback(vol_tmp))
 
-                # To update the progress bar, we need to evaluate the results
-                if verbose:
-                    mx.eval(vol_tmp)
+                # We need to evalute to update the progress bar, but also to
+                # reduce memory usage by freeing intermediate GPU arrays sooner
+                mx.eval(vol_tmp)
+                _mlx_clear_cache()
                 if _MLX_MEM_PROFILE:
                     _mlx_mem_log(f"level={k} repeat={rep} after warp")
         vol_tmp = warp_map.warp(vol, out=vol_tmp)
@@ -527,7 +512,8 @@ class RegistrationPyramidMlx:
         return vol_tmp, warp_map, callback_output
 
     def clean_up(self):
-        """No-op cleanup hook for API compatibility with other backends."""
+        """Release cached MLX GPU buffers after registration."""
+        _mlx_clear_cache()
         return None
 
 
@@ -559,7 +545,11 @@ class ProjectorMlx(BaseModel):
             mx.array: Projected volume block (5D dataset, with the first 3 dimensions being blocks and the last 2 dimensions being 2D projections)
         """
         # Keep the full projector path on MLX/GPU (optimized type check)
-        vol_blocks = mx.array(vol_blocks, dtype=mx.float32) if not isinstance(vol_blocks, mx.array) else vol_blocks.astype(mx.float32)
+        vol_blocks = (
+            mx.array(vol_blocks, dtype=mx.float32)
+            if not isinstance(vol_blocks, mx.array)
+            else vol_blocks.astype(mx.float32)
+        )
 
         # Projection.
         if self.max:

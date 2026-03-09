@@ -101,12 +101,9 @@ class WarpMapCupy(WarpMapBase):
 
         ix = cp.indices(self.warp_field.shape[1:]).reshape(3, -1).T
         ix = ix * self.block_stride + self.block_size / 2
-        M = cp.zeros(self.warp_field.shape[1:])
-        #M[1:-1, 1:-1, 1:-1] = 1
-        M[:,:,:] = 1
-        ixg = cp.where(M.flatten() > 0)[0]
-        a = cp.hstack([ix[ixg], cp.ones((len(ixg), 1))])
-        b = ix[ixg] + self.warp_field.reshape(3, -1).T[ixg]
+        # Use all indices - no need to create wasteful M array
+        a = cp.hstack([ix, cp.ones((ix.shape[0], 1))])
+        b = ix + self.warp_field.reshape(3, -1).T
         coeff = cp.linalg.lstsq(a, b, rcond=None)[0]
         ix_out = cp.indices(warp_field_shape[1:]).reshape(3, -1).T * block_stride + block_size / 2
         linfit = ((ix_out @ (coeff[:3] - cp.eye(3))) + coeff[3]).T.reshape(warp_field_shape)
@@ -146,14 +143,14 @@ class WarpMapCupy(WarpMapBase):
         ix = cp.array(cp.indices(t_sh).reshape(3, -1))
         # ix = (ix + 0.5) / cp.array(self.block_size / t_bsz)[:, None] - 0.5
         ix = (ix * t_bst[:, None] + (t_bsz - self.block_size)[:, None] / 2) / self.block_stride[:, None]
-        dm_r = cp.array(
-            [
-                cupyx.scipy.ndimage.map_coordinates(cp.array(self.warp_field[i]), ix, mode="nearest", order=1).reshape(
-                    t_sh
-                )
-                for i in range(3)
-            ]
-        )
+
+        # Preallocate output array and fill in loop to avoid temporary list creation
+        dm_r = cp.empty((3, *t_sh), dtype=self.warp_field.dtype)
+        for i in range(3):
+            dm_r[i] = cupyx.scipy.ndimage.map_coordinates(
+                self.warp_field[i], ix, mode="nearest", order=1
+            ).reshape(t_sh)
+
         return WarpMapCupy(dm_r, t_bsz, t_bst, self.ref_shape, self.mov_shape)
 
     def invert_fast(self, sigma=0.5, truncate=20):
