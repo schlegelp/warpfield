@@ -1,4 +1,4 @@
-![Python Version](https://img.shields.io/badge/python-3.9+-blue)
+![Python Version](https://img.shields.io/badge/python-3.10+-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![tests](https://github.com/danionella/warpfield/actions/workflows/test.yml/badge.svg)
 [![PyPI - Version](https://img.shields.io/pypi/v/warpfield)](https://pypi.org/project/warpfield/)

@@ -14,7 +14,7 @@ authors = [
 license = { text = "MIT" }
 readme = "README.md"
 keywords = ["warpfield", "python"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "scipy",
