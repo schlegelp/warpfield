@@ -43,7 +43,9 @@ The key steps are:
 
 ## Installation
 
-Using [conda/mamba](https://github.com/conda-forge/miniforge?tab=readme-ov-file#install):
+### CUDA (NVIDIA GPUs)
+
+This requires the [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit-archive) 12.x to be installed on your system. We recommend installing `warpfield` via [conda/mamba](https://github.com/conda-forge/miniforge?tab=readme-ov-file#install):
 
 ```bash
 conda install conda-forge::warpfield
@@ -62,6 +64,16 @@ Installation via pip is also possible (but you need to separately ensure [CUDA T
 pip install warpfield
 ```
 
+### Apple Silicon (Metal)
+
+This requires a Mac with Apple Silicon (M-series chip) and macOS 14.0 or later. Installation
+via pip should just work:
+
+```bash
+pip install warpfield
+```
+
+### Development
 For development, fork and clone the repository. Then type:
 
 ```bash
