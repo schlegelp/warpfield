@@ -169,6 +169,9 @@ def test_register_volumes():
     moving = np.roll(fixed, shift=5, axis=0).copy()  # Simulate a simple shift
     recipe = warpfield.Recipe.from_yaml("default.yml")
 
+    if mlx_available:
+        mx.reset_peak_memory()  # Reset MLX peak memory before test
+
     registered, warp_map, _ = warpfield.register_volumes(fixed, moving, recipe, backend="auto", verbose=False)
 
     assert registered.shape == fixed.shape, "Registered volume shape mismatch."
@@ -176,6 +179,10 @@ def test_register_volumes():
         np.abs(registered[10:-10, 10:-10, 10:-10] - fixed[10:-10, 10:-10, 10:-10]) < 0.2
     ).mean() > 0.9, "Registered volume does not match the fixed volume."
     assert warp_map is not None, "WarpMap object was not returned."
+
+    if mlx_available:
+        peak = mx.get_peak_memory() / 1024**3  # in GiB
+        assert peak < 2.0, f"MLX peak memory usage is too high: {peak:.2f} GiB"
 
 
 def test_register_volumes_noncubic():

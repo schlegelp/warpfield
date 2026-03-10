@@ -174,6 +174,12 @@ def _get_sample_displacement_channels_vmapped():
 
 def _refine_displacement_from_xcorr_and_spectrum(xcorr_proj, R, epsilon, subpixel):
     """Refine integer-peak displacement to subpixel precision for one projection."""
+    max_ix = _compute_integer_peak_from_xcorr(xcorr_proj, epsilon)
+    return _refine_subpixel_from_spectrum(R, max_ix, subpixel)
+
+
+def _compute_integer_peak_from_xcorr(xcorr_proj, epsilon):
+    """Compute integer displacement peak from cross-correlation volume."""
     center_y = xcorr_proj.shape[-2] // 2
     center_x = xcorr_proj.shape[-1] // 2
 
@@ -191,7 +197,11 @@ def _refine_displacement_from_xcorr_and_spectrum(xcorr_proj, R, epsilon, subpixe
     max_ix_1 = mx.reshape(max_ix_1, xcorr_proj.shape[:-2])
     max_ix = mx.stack([max_ix_0, max_ix_1], axis=0)
     max_ix = max_ix - mx.array(xcorr_proj.shape[-2:], dtype=mx.float32)[:, None, None, None] // 2
+    return max_ix
 
+
+def _refine_subpixel_from_spectrum(R, max_ix, subpixel):
+    """Refine integer displacement peak to subpixel using local upsampled DFT."""
     max_ix_reshaped = mx.reshape(max_ix, (2, -1))
     i0 = max_ix_reshaped[0]
     j0 = max_ix_reshaped[1]
@@ -211,7 +221,6 @@ def _refine_displacement_from_xcorr_and_spectrum(xcorr_proj, R, epsilon, subpixe
     max_sub_1 = mx.reshape(max_sub_1, max_ix.shape[1:])
     max_sub = mx.stack([max_sub_0, max_sub_1], axis=0)
     max_sub = (max_sub - mx.array(shifts.shape[-2:], dtype=mx.float32)[:, None, None, None] // 2) / subpixel
-
     return max_ix + max_sub
 
 

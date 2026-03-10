@@ -134,6 +134,7 @@ def convolve_separable_mlx(input_arr, kernels, axes, mode="constant"):
         # For 1D convolution along an axis, use sliding windows
         # Move axis to position 0 for easier processing
         padded = mx.moveaxis(padded, axis, 0)
+
         # mx.as_strided assumes contiguous layout for the provided shape order.
         # Materialize this transposed view to keep strided windows correct.
         padded = mx.array(padded, dtype=mx.float32)
@@ -161,13 +162,30 @@ def convolve_separable_mlx(input_arr, kernels, axes, mode="constant"):
         windows = mx.as_strided(padded, shape=win_shape, strides=win_strides)
 
         # Broadcast kernel over all non-window dimensions and reduce over window axis.
+        # Chunk over out_len to avoid materializing a huge weighted tensor at once.
         kernel_shape = [1, int(kernel_size)] + [1] * len(rest_shape)
-        weighted = windows * mx.reshape(kernel_flipped, kernel_shape)
-        result = mx.sum(weighted, axis=1)
+        kernel_broadcast = mx.reshape(kernel_flipped, kernel_shape)
+
+        # Heuristic target for temporary weighted tensor size per chunk.
+        # weighted chunk shape: (chunk, kernel_size, *rest_shape)
+        target_chunk_bytes = 256 * 1024 * 1024
+        rest_elems = 1
+        for s in rest_shape:
+            rest_elems *= int(s)
+        bytes_per_chunk_row = int(kernel_size) * rest_elems * 4  # float32
+        chunk_len = max(1, min(int(out_len), target_chunk_bytes // max(1, bytes_per_chunk_row)))
+
+        conv_chunks = []
+        for start in range(0, int(out_len), int(chunk_len)):
+            stop = min(int(out_len), start + int(chunk_len))
+            conv_chunk = mx.sum(windows[start:stop] * kernel_broadcast, axis=1)
+            mx.eval(conv_chunk)  # <- DO NOT REMOVE THIS EVAL - otherwise we see huge memory spikes here due to lazy evaluation of the large intermediate weighted tensor
+            conv_chunks.append(conv_chunk)
+
+        result = conv_chunks[0] if len(conv_chunks) == 1 else mx.concatenate(conv_chunks, axis=0)
 
         # Move axis back to original position
         result = mx.moveaxis(result, 0, axis)
-
     return result
 
 
@@ -569,13 +587,10 @@ def upsampled_dft_rfftn(data, upsampled_region_size, upsample_factor: int = 1, a
         # Flip both dimensions and conjugate
         tail_flipped = tail[:, ::-1, ::-1]
 
-        # Concatenate to form full spectrum
+        # Concatenate to form full spectrum and immediately force
+        # evaluation for numerical stability and to avoid memory peaks
         full_real = mx.concatenate([full_real, mx.real(tail_flipped)], axis=2)
         full_imag = mx.concatenate([full_imag, -mx.imag(tail_flipped)], axis=2)
-
-        # Force evaluation for numerical stability
-        mx.eval(full_real)
-        mx.eval(full_imag)
     else:
         # No conjugate symmetric part needed
         pass

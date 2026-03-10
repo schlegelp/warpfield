@@ -24,9 +24,10 @@ from .utils import (
     median_filter,
     smooth_func,
     _get_sample_displacement_channels_vmapped,
-    _compute_displacement_for_one_projection,
+    _compute_integer_peak_from_xcorr,
+    _refine_subpixel_from_spectrum,
 )
-from .mem import _mlx_mem_log, _mlx_clear_cache, _mlx_reset_peak_memory, _MLX_MEM_PROFILE
+from .mem import _mlx_clear_cache
 from ...base import WarpMapBase
 
 
@@ -349,23 +350,25 @@ class WarpMapperMlx:
         # This avoids stacking all 3 axes simultaneously, which can cause 30+ GB spikes
         disp_field_list = []
         for i in range(3):
-            _mlx_reset_peak_memory()
             # Compute FFT and cross-correlation for this axis
-            R = mx.fft.rfft2(vol_blocks_proj[i], axes=(-2, -1)) * self.ref_blocks_proj_ft_conj[i]
+            vol_proj_fft = mx.fft.rfft2(vol_blocks_proj[i], axes=(-2, -1))
+            # Multiply with reference FFT (conjugate) - this is a hotspot
+            R = vol_proj_fft * self.ref_blocks_proj_ft_conj[i]
+
             xcorr = mx.fft.fftshift(mx.fft.irfft2(R, axes=(-2, -1)), axes=(-2, -1))
+
             if smooth_func is not None:
                 # smooth_func is a Smoother instance that routes to backend-specific smoother
                 xcorr = smooth_func(backend="mlx", xcorr_proj=xcorr, block_size=self.block_size)
 
-            # Refine displacement for this axis
-            disp_single = _compute_displacement_for_one_projection(xcorr, R, epsilon_mx, self.subpixel)
-            if _MLX_MEM_PROFILE:
-                mx.eval(disp_single)
-                _mlx_mem_log(f"get_displacement axis={i}")
+            # Refine displacement in two phases so xcorr can be released before subpixel DFT.
+            max_ix = _compute_integer_peak_from_xcorr(xcorr, epsilon_mx)
+
+            disp_single = _refine_subpixel_from_spectrum(R, max_ix, self.subpixel)
             disp_field_list.append(disp_single)
 
             # Free intermediate arrays to reduce memory usage
-            del R, xcorr
+            del R
 
         # Combine displacement fields from the 3 projections
         disp_field = (
@@ -457,9 +460,6 @@ class RegistrationPyramidMlx:
         )
         vol_tmp = mx.zeros(self.ref_shape, dtype=mx.float32)
         vol_tmp = warp_map.warp(vol_tmp0, out=vol_tmp)
-        if _MLX_MEM_PROFILE:
-            mx.eval(vol_tmp)
-            _mlx_mem_log("register_single after initial warp")
         min_block_stride = np.min([mapper.block_stride for mapper in self.mappers], axis=0)
         if callback is not None:
             callback_output.append(callback(vol_tmp))
@@ -472,7 +472,6 @@ class RegistrationPyramidMlx:
             for rep in tqdm(
                 range(self.recipe.levels[self.mapper_ix[k]].repeats), leave=False, desc="Repeats", disable=not verbose
             ):
-                _mlx_reset_peak_memory()
                 wm = mapper.get_displacement(vol_tmp, smooth_func=self.recipe.levels[self.mapper_ix[k]].smooth)
                 wm.warp_field *= self.recipe.levels[self.mapper_ix[k]].update_rate
                 if self.recipe.levels[self.mapper_ix[k]].median_filter:
@@ -501,12 +500,7 @@ class RegistrationPyramidMlx:
                 # reduce memory usage by freeing intermediate GPU arrays sooner
                 mx.eval(vol_tmp)
                 _mlx_clear_cache()
-                if _MLX_MEM_PROFILE:
-                    _mlx_mem_log(f"level={k} repeat={rep} after warp")
         vol_tmp = warp_map.warp(vol, out=vol_tmp)
-        if _MLX_MEM_PROFILE:
-            mx.eval(vol_tmp)
-            _mlx_mem_log("register_single final warp")
         if was_numpy:
             vol_tmp = np.array(vol_tmp)
         return vol_tmp, warp_map, callback_output

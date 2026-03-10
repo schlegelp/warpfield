@@ -11,7 +11,8 @@ def _to_mib(n_bytes):
 def _mlx_get_active_memory():
     if hasattr(mx, "get_active_memory"):
         return mx.get_active_memory()
-    if hasattr(mx, "metal"):
+    # Fallback for older MLX versions
+    if hasattr(mx, "metal") and hasattr(mx.metal, "get_active_memory"):
         return mx.metal.get_active_memory()
     return 0
 
@@ -19,7 +20,8 @@ def _mlx_get_active_memory():
 def _mlx_get_cache_memory():
     if hasattr(mx, "get_cache_memory"):
         return mx.get_cache_memory()
-    if hasattr(mx, "metal"):
+    # Fallback for older MLX versions
+    if hasattr(mx, "metal") and hasattr(mx.metal, "get_cache_memory"):
         return mx.metal.get_cache_memory()
     return 0
 
@@ -27,7 +29,8 @@ def _mlx_get_cache_memory():
 def _mlx_get_peak_memory():
     if hasattr(mx, "get_peak_memory"):
         return mx.get_peak_memory()
-    if hasattr(mx, "metal"):
+    # Fallback for older MLX versions
+    if hasattr(mx, "metal") and hasattr(mx.metal, "get_peak_memory"):
         return mx.metal.get_peak_memory()
     return 0
 
@@ -36,16 +39,20 @@ def _mlx_clear_cache():
     if hasattr(mx, "clear_cache"):
         mx.clear_cache()
         return
+    # Fallback for older MLX versions
     if hasattr(mx, "metal"):
-        mx.metal.clear_cache()
+        if hasattr(mx.metal, "clear_cache"):
+            mx.metal.clear_cache()
 
 
 def _mlx_reset_peak_memory_impl():
     if hasattr(mx, "reset_peak_memory"):
         mx.reset_peak_memory()
         return
+    # Fallback for older MLX versions
     if hasattr(mx, "metal"):
-        mx.metal.reset_peak_memory()
+        if hasattr(mx.metal, "reset_peak_memory"):
+            mx.metal.reset_peak_memory()
 
 
 def _mlx_mem_log(label):
