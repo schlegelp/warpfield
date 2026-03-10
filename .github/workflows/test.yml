@@ -44,7 +44,6 @@ jobs:
         if: runner.os != 'macOS'
         with:
           create-args: >-
-            cupy
             cuda-version=12
           environment-name: tests
           init-shell: >-
