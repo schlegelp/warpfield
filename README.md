@@ -37,7 +37,7 @@ The key steps are:
 
 ## Hardware requirements
 
-- A computer running Linux (recommended) or Windows
+- A computer running Linux (recommended) or Windows for the CUDA backend, or macOS 14.0+ for the Metal backend
 - A CUDA- or Metal-compatible GPU with sufficient GPU memory: ≥ 30 bytes per voxel (30 GB / gigavoxel) of your 3D volume
 
 
