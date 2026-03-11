@@ -186,6 +186,7 @@ class WarpMapCupy(WarpMapBase):
             numpy.array: transformed voxel coordinates
         """
         assert coords.shape[0] == 3
+        was_numpy = isinstance(coords, np.ndarray)
         coords = cp.array(coords, dtype="float32")
         # coords_blocked = coords / self.block_size[:, None] - 0.5
         coords_blocked = coords / self.block_stride[:, None] - (self.block_size / (2 * self.block_stride))[:, None]
@@ -197,7 +198,11 @@ class WarpMapCupy(WarpMapBase):
             )
         if negative_shifts:
             shifts = -shifts
-        return coords + shifts
+        result = coords + shifts
+
+        if was_numpy:
+            result = result.get()
+        return result
 
     def jacobian_det(self, units_per_voxel=[1, 1, 1], edge_order=1):
         """
