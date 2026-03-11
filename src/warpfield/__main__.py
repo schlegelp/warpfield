@@ -39,6 +39,9 @@ def main():
     parser.add_argument(
         "--invert", action="store_true", help="Invert the warp map and register the moving image to the fixed image."
     )
+    parser.add_argument(
+        "--backend", default="auto", help="Backend to use for computation. Currently supported `cupy` or `mlx` (default: auto)."
+    )
     args = parser.parse_args()
     output_path = args.output or f"{os.path.splitext(args.moving)[0]}_registered.h5"
 
@@ -57,7 +60,7 @@ def main():
 
     # register
     logging.info("Registering the moving image to the fixed image...")
-    registered_image, warp_map, _ = register_volumes(fixed_image, moving_image, recipe, verbose=True)
+    registered_image, warp_map, _ = register_volumes(fixed_image, moving_image, recipe, backend=args.backend, verbose=True)
 
     if args.invert:
         logging.info("Inverting the warp map...")
