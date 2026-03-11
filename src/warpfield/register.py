@@ -7,8 +7,8 @@ import warnings
 
 import numpy as np
 
-from pydantic import BaseModel, TYPE_CHECKING
-from typing import List, Union, Callable, Any
+from pydantic import BaseModel
+from typing import List, Union, Callable, Any, TYPE_CHECKING
 
 from .backends import registry
 from .utils import create_rgb_video
