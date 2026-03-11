@@ -5,23 +5,12 @@ import numpy as np
 import h5py
 import hdf5plugin
 
-from .utils import load_data
+from .utils import load_data, to_numpy_array
 from .register import register_volumes, Recipe
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-
-def to_numpy(array):
-    """Convert an array to a NumPy array if it's not already."""
-    if isinstance(array, np.ndarray):
-        return array
-    elif "cupy" in str(type(array)):
-        return array.get()
-    elif "mlx" in str(type(array)):
-        return np.array(array)
-    else:
-        raise TypeError(f"Unsupported array type: {type(array)}")
 
 
 def main():
@@ -77,11 +66,11 @@ def main():
         f.create_dataset("moving_reg", data=registered_image, compression=args.compression)
         f.create_dataset("recipe_json", data=recipe.model_dump_json().encode("utf-8"))
         warp_map_group = f.create_group("warp_map")
-        warp_map_group.create_dataset("warp_field", data=to_numpy(warp_map.warp_field), compression=args.compression)
-        warp_map_group.create_dataset("block_size", data=to_numpy(warp_map.block_size))
-        warp_map_group.create_dataset("block_stride", data=to_numpy(warp_map.block_stride))
+        warp_map_group.create_dataset("warp_field", data=to_numpy_array(warp_map.warp_field), compression=args.compression)
+        warp_map_group.create_dataset("block_size", data=to_numpy_array(warp_map.block_size))
+        warp_map_group.create_dataset("block_stride", data=to_numpy_array(warp_map.block_stride))
         if args.invert:
-            f.create_dataset("fixed_reg_inv", data=to_numpy(fixed_reg_inv), compression=args.compression)
+            f.create_dataset("fixed_reg_inv", data=to_numpy_array(fixed_reg_inv), compression=args.compression)
 
     logging.info("Done!")
 
