@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class Backend:
     """A backend for warping and registration operations."""
 
-    name: str  # name of the backend (e.g., "cupy", "numpy")
+    name: str  # name of the backend (e.g., "cupy", "mlx", etc.)
     warpmap_cls: type  # class implementing the WarpMap for this backend
     warp_volume_func: callable  # function to warp volumes using this backend
     registration_pyramid_cls: type  # class implementing the RegistrationPyramid for this backend

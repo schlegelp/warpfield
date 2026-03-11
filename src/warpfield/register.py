@@ -35,7 +35,7 @@ class WarpMap:
             - "auto" (default): automatically selects the best available backend
             - "cupy": forces use of CuPy backend (requires GPU)
             - "mlx": forces use of MLX backend (requires Apple Silicon GPU)
-            - "cpu": forces use of CPU backend (not yet implemented)
+
 
     Returns:
         An instance of the appropriate WarpMap backend implementation.
@@ -54,7 +54,7 @@ class WarpMap:
             block_stride: block stride
             ref_shape: reference shape
             mov_shape: moving shape
-            backend (str): backend to use ("auto", "cupy", "mlx", "cpu", etc.)
+            backend (str): backend to use ("auto", "cupy", "mlx", etc.)
 
         Returns:
             Instance of a WarpMap backend implementation
@@ -149,7 +149,7 @@ class Projector(BaseModel):
     def __call__(self, backend, vol_blocks, axis):
         """Apply a 2D projection and filters to a volume block
         Args:
-            backend (str): Name of the backend to use (e.g., "cupy", "mlx", "cpu").
+            backend (str): Name of the backend to use (e.g., "cupy", "mlx", etc).
             vol_blocks (array-like): Blocked volume to be projected (6D dataset, with the first 3 dimensions being blocks and the last 3 dimensions being voxels)
             axis (int): Axis along which to project
         Returns:

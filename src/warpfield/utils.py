@@ -20,7 +20,7 @@ def zoom(arr, zoom_factors, order=1, mode="constant", backend="auto"):
             while values less than 1 result in a smaller array. Divide the physical voxel size of the input array by these values to get the physical voxel size of the output array.
         order (int): The order of the spline interpolation. Default is 1 (linear).
         mode (str): The mode parameter determines how the input array is extended beyond its boundaries when the zoom operation requires values outside the original array. Default is "constant".
-        backend (str): The backend to use for the zoom operation. Default is "auto", which will select the best available backend (e.g., "mlx" on Apple Silicon, "cupy" on CUDA-enabled GPUs, or "numpy" as a fallback).
+        backend (str): The backend to use for the zoom operation. Default is "auto", which will select the best available backend (e.g., "mlx" on Apple Silicon, "cupy" on CUDA-enabled GPUs).
 
     Returns:
         np.ndarray or cp.ndarray: The zoomed array.
