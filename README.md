@@ -291,5 +291,4 @@ Hoffmann, M., Henninger, J. et al. Blazed oblique plane microscopy reveals scale
 
 - [Advanced Normalization Tools in Python (ANTsPy)](https://github.com/ANTsX/ANTsPy)
 - [Computational Morphometry Toolkit (CMTK)](https://www.nitrc.org/projects/cmtk)
-- [Constrained Large Deformation Diffeomorphic Image Registration (CLAIRE)
-](https://github.com/andreasmang/claire)
+- [Constrained Large Deformation Diffeomorphic Image Registration (CLAIRE)](https://github.com/andreasmang/claire)
