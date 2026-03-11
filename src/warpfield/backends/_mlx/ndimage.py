@@ -369,7 +369,7 @@ def gausskernel_sheared(sigma, shear=0, truncate=3):
         grid[dim] -= shape[dim] // 2
         grid[dim] /= sigma[dim]
     grid[0] = grid[0] + shear * grid[1] * sigma[1] / sigma[0]
-    out = np.exp(-(grid**2).sum(0) / 2)
+    out = mx.exp(-(grid**2).sum(0) / 2)
     out /= out.sum()
     return out
 
