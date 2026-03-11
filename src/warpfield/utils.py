@@ -362,7 +362,7 @@ def to_numpy_dtype(dt):
         str: The corresponding NumPy dtype as a string.
     """
     if hasattr(dt, "dtype"):
-        dt.dtype
+        dt = dt.dtype
 
     # For numpy/cupy dtypes, this is now already e.g. "float32"
     dt = str(dt)
