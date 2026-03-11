@@ -518,7 +518,7 @@ class SmootherCupy(BaseModel):
             return xcorr_proj
         if self.shear is not None:
             shear_blocks = self.shear * (block_size[1] / block_size[0])
-            gw = gausskernel_sheared(self.sigma[:2], shear_blocks, truncate=truncate)
+            gw = gausskernel_sheared(self.sigmas[:2], shear_blocks, truncate=truncate)
             gw = cp.array(gw[:, :, None, None, None])
             xcorr_proj = cupyx.scipy.ndimage.convolve(xcorr_proj, gw, mode="constant")
             xcorr_proj = cupyx.scipy.ndimage.gaussian_filter1d(
