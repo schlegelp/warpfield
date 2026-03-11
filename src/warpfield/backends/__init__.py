@@ -16,6 +16,7 @@ def register_available_backends():
             ProjectorCupy,
             RegFilterCupy,
         )
+        from ._cupy.ndimage import zoom as cupy_zoom
 
         registry.register_backend(
             Backend(
@@ -26,6 +27,7 @@ def register_available_backends():
                 smoother_cls=SmootherCupy,
                 projector_cls=ProjectorCupy,
                 reg_filter_cls=RegFilterCupy,
+                zoom_func=cupy_zoom,
             )
         )
 
@@ -38,6 +40,7 @@ def register_available_backends():
             ProjectorMlx,
             RegFilterMlx,
         )
+        from ._mlx.ndimage import zoom as mlx_zoom
 
         registry.register_backend(
             Backend(
@@ -48,6 +51,7 @@ def register_available_backends():
                 smoother_cls=SmootherMlx,
                 projector_cls=ProjectorMlx,
                 reg_filter_cls=RegFilterMlx,
+                zoom_func=mlx_zoom,
             )
         )
 

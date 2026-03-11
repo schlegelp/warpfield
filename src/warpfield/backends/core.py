@@ -12,6 +12,7 @@ class Backend:
     smoother_cls: type  # class implementing the Smoother for this backend
     projector_cls: type  # class implementing the Projector for this backend
     reg_filter_cls: type  # class implementing the RegFilter for this backend
+    zoom_func: callable  # function to perform zooming (resampling) for this backend
 
     def __post_init__(self):
         self.name = self.name.lower()

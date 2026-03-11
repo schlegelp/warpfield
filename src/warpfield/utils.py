@@ -11,6 +11,25 @@ from pathlib import Path
 from .backends import registry
 
 
+def zoom(arr, zoom_factors, order=1, mode="constant", backend="auto"):
+    """Zooms an array by given factors along each axis.
+
+    Args:
+        arr (np.ndarray or cp.ndarray): The input array to be zoomed.
+        zoom_factors (tuple of float): Zoom factors for each axis. Values greater than 1 result in a larger output array,
+            while values less than 1 result in a smaller array. Divide the physical voxel size of the input array by these values to get the physical voxel size of the output array.
+        order (int): The order of the spline interpolation. Default is 1 (linear).
+        mode (str): The mode parameter determines how the input array is extended beyond its boundaries when the zoom operation requires values outside the original array. Default is "constant".
+        backend (str): The backend to use for the zoom operation. Default is "auto", which will select the best available backend (e.g., "mlx" on Apple Silicon, "cupy" on CUDA-enabled GPUs, or "numpy" as a fallback).
+
+    Returns:
+        np.ndarray or cp.ndarray: The zoomed array.
+    """
+    func = registry.get_backend(backend).zoom_func
+
+    return func(arr, zoom_factors, order=order, mode=mode)
+
+
 def set_default_backend(backend_name):
     """Set the default for backend="auto"."""
     if backend_name in ("auto", None):
