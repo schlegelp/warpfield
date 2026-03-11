@@ -36,7 +36,7 @@ class WarpMapBase(ABC):
     @property
     def warp_field_numpy(self):
         """Return warp field guaranteed to be a numpy array."""
-        return np.array(self.warp_field)
+        return to_numpy_array(self.warp_field)
 
     @property
     def block_size(self):
@@ -49,7 +49,7 @@ class WarpMapBase(ABC):
     @property
     def block_size_numpy(self):
         """Return block size guaranteed to be a numpy array."""
-        return np.array(self.block_size)
+        return to_numpy_array(self.block_size)
 
     @property
     def block_stride(self):
@@ -62,7 +62,7 @@ class WarpMapBase(ABC):
     @property
     def block_stride_numpy(self):
         """Return block stride guaranteed to be a numpy array."""
-        return np.array(self.block_stride)
+        return to_numpy_array(self.block_stride)
 
     @abstractmethod
     def warp(self, vol, out=None):
