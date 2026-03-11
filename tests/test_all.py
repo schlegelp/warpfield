@@ -62,7 +62,7 @@ def test_warpmap_invert_fast_zero_field():
     )
 
     inv = wm.invert_fast(sigma=0.5, truncate=4)
-    inv_np = np.array(inv.warp_field)
+    inv_np = _to_numpy(inv.warp_field)
 
     expected_shape = tuple(np.ceil(np.array(mov_shape) / block_stride + 1).astype(int))
     assert inv_np.shape == (3, *expected_shape)
@@ -112,7 +112,7 @@ def test_warpmap_jacobian_det_linear_field():
         backend="auto",
     )
 
-    det_j = np.array(wm.jacobian_det(units_per_voxel=[1, 1, 1], edge_order=1))
+    det_j = _to_numpy(wm.jacobian_det(units_per_voxel=[1, 1, 1], edge_order=1))
     expected = (1.0 + alpha) * (1.0 + beta) * (1.0 + gamma)
 
     np.testing.assert_allclose(det_j[1:-1, 1:-1, 1:-1], expected, atol=2e-3, rtol=2e-3)
@@ -251,3 +251,8 @@ def test_cli(tmp_path):
     with h5py.File(output_path, "r") as f:
         assert "moving_reg" in f, "Registered volume not found in output file."
         assert "warp_map" in f, "Warp map not found in output file."
+
+def _to_numpy(arr):
+    if cupy_available and isinstance(arr, cp.ndarray):
+        return arr.get()
+    return np.asarray(arr)
