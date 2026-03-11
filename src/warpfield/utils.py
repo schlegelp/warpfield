@@ -372,3 +372,17 @@ def to_numpy_dtype(dt):
         dt = dt.split(".")[-1]
 
     return dt
+
+
+def to_numpy_array(arr):
+    """Convert a CuPy or Mlx array to a NumPy array.
+
+    Args:
+        arr: An array which may be a NumPy array, a CuPy array, or an Mlx array.
+
+    Returns:
+        np.ndarray: The corresponding NumPy array.
+    """
+    if hasattr(arr, 'get'):
+        return arr.get()
+    return np.asarray(arr)

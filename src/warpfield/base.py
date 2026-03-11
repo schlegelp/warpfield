@@ -4,6 +4,8 @@ import numpy as np
 
 from abc import ABC, abstractmethod
 
+from .utils import to_numpy_array
+
 
 class WarpMapBase(ABC):
     """Represents a 3D displacement field
@@ -177,9 +179,9 @@ class WarpMapBase(ABC):
             if (not overwrite) and (group in f):
                 raise ValueError(f"Group '{group}' already exists in {h5_path}. Set 'overwrite=True' to overwrite it.")
             grp = f.require_group(group) if group not in (None, "", "/") else f
-            grp.create_dataset("warp_field", data=self.warp_field.get(), compression=compression)
-            grp.create_dataset("block_size", data=self.block_size.get())
-            grp.create_dataset("block_stride", data=self.block_stride.get())
+            grp.create_dataset("warp_field", data=to_numpy_array(self.warp_field), compression=compression)
+            grp.create_dataset("block_size", data=to_numpy_array(self.block_size))
+            grp.create_dataset("block_stride", data=to_numpy_array(self.block_stride))
             grp.create_dataset("ref_shape", data=np.array(self.ref_shape, dtype="int64"))
             grp.create_dataset("mov_shape", data=np.array(self.mov_shape, dtype="int64"))
             grp.attrs["class"] = "WarpMap"
