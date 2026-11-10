@@ -115,7 +115,9 @@ class WarpMapBase(ABC):
         pass
 
     def pull_coordinates(self, coords):
-        """Pull voxel coordinates through the warp field. Involves inversion, followed by pushing coordinates.
+        """Pull voxel coordinates from moving to fixed space (the reverse of `push_coordinates`).
+
+        Involves inversion, followed by pushing coordinates.
 
         Args:
             coords (numpy.array): 3D *voxel* coordinates to be warped (3-by-n array)
@@ -123,7 +125,9 @@ class WarpMapBase(ABC):
         Returns:
             numpy.array: transformed voxel coordinates
         """
-        return self.invert().push_coordinates(coords, negative_shifts=True)
+        # N.B. `invert()` already negates the displacement field, so we must not
+        # negate the shifts again here (doing so would turn pull into push)
+        return self.invert().push_coordinates(coords)
 
     @abstractmethod
     def jacobian_det(self, units_per_voxel=[1, 1, 1], edge_order=1):
